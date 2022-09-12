@@ -22,7 +22,7 @@ func (h *Heap) Insert(data int) {
 	h.Buckets[h.Count] = data
 	i := h.Count
 	for {
-		if i/2 > 0 && h.Buckets[i] > h.Buckets[i/2] {
+		if i/2 > 0 && h.Buckets[i] > h.Buckets[i/2] { //自下而上的堆化
 			h.Buckets[i/2], h.Buckets[i] = h.Buckets[i], h.Buckets[i/2]
 		}
 		i /= 2
@@ -40,7 +40,7 @@ func (h *Heap) Remove() int {
 	return value
 }
 
-func heapfy(heap []int, n, i int) {
+func heapfy(heap []int, n, i int) { //自上而下的堆化
 	for {
 		mostMax := i
 		if 2*i <= n && heap[i] < heap[2*i] {
@@ -54,5 +54,21 @@ func heapfy(heap []int, n, i int) {
 		}
 		heap[i], heap[mostMax] = heap[mostMax], heap[i]
 		i = mostMax
+	}
+}
+
+func buildHeap(heap []int, n int) {
+	for i := n / 2; i >= 1; i-- {
+		heapfy(heap, n, i)
+	}
+}
+
+func heapSort(heap []int, n int) {
+	buildHeap(heap, n)
+	k := n
+	for k > 1 {
+		heap[1], heap[k] = heap[k], heap[1]
+		k--
+		heapfy(heap, k, 1)
 	}
 }
