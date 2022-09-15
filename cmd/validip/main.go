@@ -2,46 +2,19 @@ package main
 
 import (
 	"bufio"
+	"encoding/binary"
 	"fmt"
 	"os"
 	"strconv"
 	"strings"
 )
 
-//通过高8位用来区分ip的类别,假设高八位的值为x
-//a 0 0000000  x>>7==0
-//b 10 000000  x>>6==0+2
-//c 110 00000  x>>5==0+2+4
-//d 1110 0000  x>>4==0+2+4+8
-//e 11110 000  x>>3==0+2+4+8+16
-//全0或者全1，用当前的的bit取反与下一位bit求与的结果与当前位求与 和 255求与 看是否为255，不是则不全为1或者0 (((^mask[t] & (mask[t] - 1)) ^ mask[t]) & 255) == 255
-var (
-	typeAStart = 1 << 24
-	typeAEnd   = 126<<24 + 255<<16 + 255<<8 + 255
-	typeBStart = 128 << 24
-	typeBEnd   = 191<<24 + 255<<16 + 255<<8 + 255
-	typeCStart = 192 << 24
-	typeCEnd   = 223<<24 + 255<<16 + 255<<8 + 255
-	typeDStart = 224 << 24
-	typeDEnd   = 239<<24 + 255<<16 + 255<<8 + 255
-	typeEStart = 240 << 24
-	typeEEnd   = 255<<24 + 255<<16 + 255<<8 + 255
-
-	typePrivate1Start = 10 << 24
-	typePrivate1End   = 10<<24 + 255<<16 + 255<<8 + 255
-	typePrivate2Start = 172<<24 + 16<<16
-	typePrivate2End   = 172<<24 + 31<<16 + 255<<8 + 255
-	typePrivate3Start = 192<<24 + 168<<16
-	typePrivate3End   = 192<<24 + 168<<16 + 255<<8 + 255
-)
+var j int
 
 func main() {
 	var ip, mask string
 	var lineParts []string
 	var a, b, c, d, e, errCount, private int
-	var ipNum, maskNum int
-	var binMask string
-	var max1Idx, min0Idx int
 
 	scanner := bufio.NewScanner(os.Stdin)
 
@@ -50,76 +23,98 @@ func main() {
 		ip = lineParts[0]
 		mask = lineParts[1]
 
-		ipNum = ipStringToByteSlice(ip)
-		maskNum = ipStringToByteSlice(mask)
+		ipSlice := strToInts(ip)
+		maskSlice := strToInts(mask)
 
-		if ipNum>>24 == 0 || ipNum>>24 == 127 {
+		if ipSlice[0] == 0 || ipSlice[0] == 127 {
 			continue // 类似于【0.*.*.*】和【127.*.*.*】的IP地址不属于上述输入的任意一类，也不属于不合法ip地址，计数时请忽略
 		}
 
-		if ipNum == -1 || maskNum == -1 {
-			errCount++ // ip 或者mask 转数字失败
-			continue
-		}
+		if ipSlice == nil || maskSlice == nil || maskSlice[0] == 0 || maskSlice[3] == 255 || isErrMask(maskSlice) {
 
-		max1Idx = 0
-		min0Idx = 0
-		binMask = strconv.FormatInt(int64(maskNum), 2)
-		for i := 0; i < len(binMask); i++ { // 找1最后位置 0 最早位置 0后面还有1的话，错误的mask
-			if binMask[i] == '1' {
-				max1Idx = i
-			}
-
-			if binMask[i] == '0' && min0Idx == 0 {
-				min0Idx = i
-			}
-		}
-
-		if max1Idx == len(binMask)-1 || min0Idx == 0 || min0Idx <= max1Idx { // 全是1 或者 0出现在开头 或者 0后面还有1
 			errCount++
 			continue
 		}
-
 		// 以下开始 IP类型计数
+		//private
+		/*
+		   私网IP范围是：
 
-		if (typePrivate1Start <= ipNum && ipNum <= typePrivate1End) ||
-			(typePrivate2Start <= ipNum && ipNum <= typePrivate2End) ||
-			(typePrivate3Start <= ipNum && ipNum <= typePrivate3End) {
+		   从10.0.0.0到10.255.255.255
+
+		   从172.16.0.0到172.31.255.255
+
+		   从192.168.0.0到192.168.255.255
+		*/
+		if (ipSlice[0] == 172 && (ipSlice[1] == 16 || ipSlice[1] == 31)) ||
+			ipSlice[0] == 10 || (ipSlice[0] == 192 && ipSlice[1] == 168) {
 			private++
 		}
-
-		if typeAStart <= ipNum && ipNum <= typeAEnd {
-			a++
-		} else if typeBStart <= ipNum && ipNum <= typeBEnd {
-			b++
-		} else if typeCStart <= ipNum && ipNum <= typeCEnd {
-			c++
-		} else if typeDStart <= ipNum && ipNum <= typeDEnd {
-			d++
-		} else if typeEStart <= ipNum && ipNum <= typeEEnd {
+		//通过高8位用来区分ip的类别,假设高八位的值为x
+		//e 11110 000  x>>3==0+2+4+8+16
+		if ipSlice[0] >= 240 {
 			e++
+			continue
 		}
+		//d 1110 0000  x>>4==0+2+4+8
+		if ipSlice[0] >= 224 {
+			d++
+			continue
+		}
+		//c 110 00000  x>>5==0+2+4
+		if ipSlice[0] >= 192 {
+			c++
+			continue
+		}
+		//b 10 000000  x>>6==0+2
+		if ipSlice[0] >= 128 {
+			b++
+			continue
+		}
+		//a 0 0000000  x>>7==0
+		if ipSlice[0] >= 1 {
+			a++
+			continue
+		}
+
 	}
 
 	fmt.Println(a, b, c, d, e, errCount, private)
 }
+func isErrMask(maskSlice []byte) bool {
+	maskInt := int(binary.BigEndian.Uint32(maskSlice))
+	min1Idx := -1
+	max0Idx := -1
+	for i := 0; i < 32; i++ {
+		if maskInt&1 == 0 {
+			max0Idx = i
+		}
+		if maskInt&1 == 1 && min1Idx == -1 {
+			min1Idx = i
+		}
 
-func ipStringToByteSlice(ip string) int {
+		maskInt = maskInt >> 1
+	}
+	return max0Idx > min1Idx
+}
+
+func strToInts(ip string) []byte {
 	s := strings.Split(ip, ".")
 	if len(s) != 4 {
-		return -1
+		return nil
 	}
 
-	r := make([]int, 4)
-	var num int
-	var err error
+	r := make([]byte, 4)
+
 	for i := 0; i < 4; i++ {
-		num, err = strconv.Atoi(s[i])
+		num, err := strconv.Atoi(s[i])
 		if err != nil {
-			return -1
+			return nil
 		}
-		r[i] = num
+		if num > 255 {
+			return nil
+		}
+		r[i] = uint8(num)
 	}
-
-	return r[0]<<24 + r[1]<<16 + r[2]<<8 + r[3]
+	return r
 }
