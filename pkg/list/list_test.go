@@ -34,3 +34,11 @@ func TestAddTwoNumbers(t *testing.T) {
 		l = l.Next
 	}
 }
+
+func TestSortList(t *testing.T) {
+	l := sortList(l1)
+	for l != nil {
+		fmt.Println(l.Val)
+		l = l.Next
+	}
+}
