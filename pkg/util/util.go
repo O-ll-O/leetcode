@@ -1,6 +1,11 @@
 package util
 
-import "math/rand"
+import (
+	"fmt"
+	"math/rand"
+	"reflect"
+	"unsafe"
+)
 
 func GenerateCase(n int) []int {
 	if n < 0 {
@@ -12,4 +17,13 @@ func GenerateCase(n int) []int {
 		arr = append(arr, j)
 	}
 	return arr
+}
+
+func StrToBytes(s string) []byte {
+	sptr := (*reflect.StringHeader)(unsafe.Pointer(&s))
+	fmt.Println(unsafe.Pointer(&s))
+	fmt.Println(unsafe.Pointer(sptr))
+	b := (*[]byte)(unsafe.Pointer(sptr))
+	fmt.Println(unsafe.Pointer(b))
+	return *b
 }
